@@ -323,10 +323,11 @@ class PixivImage:
         meta_data = page.findAll('meta')
         for meta in meta_data:
             if meta.has_key("property"):
-                if "og:title" == meta["property"]:
-                    self.imageTitle = meta["content"].split("|")[0].strip()
                 if "og:description" in meta["property"]:
                     self.imageCaption = meta["content"]
+
+        # 03/19/2016 get title from <h1 class="title">title</h1>
+        self.imageTitle = page.find("h1", attrs={'class': 'title'}).string
 
         self.jd_rtv = int(page.find(attrs={'class': 'view-count'}).string)
         self.jd_rtc = int(page.find(attrs={'class': 'rated-count'}).string)
