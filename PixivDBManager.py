@@ -34,6 +34,47 @@ class PixivDBManager:
     def close(self):
         self.conn.close()
 
+# Create Tables
+    def _getSQLFile(self, name):
+        dirname = os.path.realpath('sql/')
+        return os.path.join(dirname, name)
+
+    def _create_member_table(self, cursor):
+        with open(self._getSQLFile('create_member_table.sql'), 'r') as f:
+            sqlContext = f.read()
+
+        cursor.execute(sqlContext)
+        self.conn.commit()
+        
+        # add column isDeleted
+        # 0 = false, 1 = true
+        try:
+            cursor.execute('''ALTER TABLE pixiv_master_member ADD COLUMN is_deleted INTEGER DEFAULT 0''')
+            self.conn.commit()
+        except:
+            pass
+ 
+    def _create_image_table(self, cursor):
+        with open(self._getSQLFile('create_image_table.sql'), 'r') as f:
+            sqlContext = f.read()
+        
+        cursor.execute(sqlContext)
+        self.conn.commit()
+        
+        # add column isManga
+        try:
+            cursor.execute('''ALTER TABLE pixiv_master_image ADD COLUMN is_manga TEXT''')
+        except:
+            pass
+
+    def _create_manga_table(self, cursor):
+        with open(self._getSQLFile('create_manga_table.sql'), 'r') as f:
+            sqlContext = f.read()
+        
+        cursor.execute(sqlContext)
+        self.conn.commit()
+
+
 ##########################################
 ## I. Create/Drop Database              ##
 ##########################################
@@ -42,50 +83,9 @@ class PixivDBManager:
 
         try:
             c = self.conn.cursor()
-
-            c.execute('''CREATE TABLE IF NOT EXISTS pixiv_master_member (
-                            member_id INTEGER PRIMARY KEY ON CONFLICT IGNORE,
-                            name TEXT,
-                            save_folder TEXT,
-                            created_date DATE,
-                            last_update_date DATE,
-                            last_image INTEGER
-                            )''')
-
-            self.conn.commit()
-
-            # add column isDeleted
-            # 0 = false, 1 = true
-            try:
-                c.execute('''ALTER TABLE pixiv_master_member ADD COLUMN is_deleted INTEGER DEFAULT 0''')
-                self.conn.commit()
-            except:
-                pass
-
-            c.execute('''CREATE TABLE IF NOT EXISTS pixiv_master_image (
-                            image_id INTEGER PRIMARY KEY,
-                            member_id INTEGER,
-                            title TEXT,
-                            save_name TEXT,
-                            created_date DATE,
-                            last_update_date DATE
-                            )''')
-            # add column isManga
-            try:
-                c.execute('''ALTER TABLE pixiv_master_image ADD COLUMN is_manga TEXT''')
-            except:
-                pass
-
-            c.execute('''CREATE TABLE IF NOT EXISTS pixiv_manga_image (
-                            image_id INTEGER,
-                            page INTEGER,
-                            save_name TEXT,
-                            created_date DATE,
-                            last_update_date DATE,
-                            PRIMARY KEY (image_id, page)
-                            )''')
-            self.conn.commit()
-
+            self._create_member_table(c)
+            self._create_image_table(c)
+            self._create_manga_table(c)
             print 'done.'
         except:
             print 'Error at createDatabase():',str(sys.exc_info())
@@ -482,20 +482,46 @@ class PixivDBManager:
         finally:
             c.close()
 
+    def _createInsertData(self, image):
+        return [
+                image.artist.artistId,
+                image.imageId, 
+                image.imageTitle, 
+                image.imageCaption, 
+                ','.join(image.imageTags), 
+                image.jd_rtv, 
+                image.jd_rtc, 
+                image.jd_rtt,
+                image.imageWidth, 
+                image.imageHeight,
+                image.worksDateDateTime, 
+                image.worksTools, 
+                (1 if image.isOriginal else 0), 
+                (1 if image.isR18 else 0),
+                image.imageCount, 
+                (1 if image.imageMode == "Manga" else 0), 
+                'n/a',
+                'n/a',
+                datetime.now().strftime("%Y-%m-%d %H:%M"), 
+                datetime.now().strftime("%Y-%m-%d %H:%M")
+            ]
+
 ##########################################
 ## V. CRUD Image Table                  ##
 ##########################################
-    def insertImage(self, memberId, ImageId, isManga=""):
+    def insertImage(self, image):
         try:
             c = self.conn.cursor()
-            memberId = int(memberId)
-            ImageId = int(ImageId)
-            c.execute('''INSERT OR IGNORE INTO pixiv_master_image VALUES(?, ?, 'N/A' ,'N/A' , datetime('now'), datetime('now'), ? )''',
-                              (ImageId, memberId, isManga))
+            memberId = int(image.artist.artistId)
+            ImageId = int(image.imageId)
+            c.execute('''INSERT OR IGNORE INTO pixiv_master_image VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )''',
+                             self._createInsertData(image))
             self.conn.commit()
-        except:
+        except Exception as e:
             print 'Error at insertImage():',str(sys.exc_info())
             print 'failed'
+            print type(e)
+            print e
             raise
         finally:
             c.close()
@@ -576,13 +602,18 @@ class PixivDBManager:
         finally:
             c.close()
 
-    def updateImage(self, imageId, title, filename, isManga=""):
+    def updateImage(self, image, filename):
         try:
             c = self.conn.cursor()
             c.execute('''UPDATE pixiv_master_image
-                        SET title = ?, save_name = ?, last_update_date = datetime('now'), is_manga = ?
+                        SET title = ?, save_name = ?, save_last_update_date = datetime('now'), is_manga = ?
                         WHERE image_id = ?''',
-                        (title, filename, isManga, imageId))
+                        (
+                             image.imageTitle, 
+                             filename, 
+                             (0 if image.imageMode == "Manga" else 0), 
+                             image.imageId
+                        ))
             self.conn.commit()
         except:
             print 'Error at updateImage():',str(sys.exc_info())

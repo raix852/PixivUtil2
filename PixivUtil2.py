@@ -663,10 +663,11 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
         # Only save to db if all images is downloaded completely
         if result == PixivConstant.PIXIVUTIL_OK or result == PixivConstant.PIXIVUTIL_SKIP_DUPLICATE or result == PixivConstant.PIXIVUTIL_SKIP_LOCAL_LARGER:
             try:
-                __dbManager__.insertImage(image.artist.artistId, image.imageId, image.imageMode)
+                print "[DEBUG] %s" % image.worksDateDateTime
+                __dbManager__.insertImage(image)
             except:
                 pass
-            __dbManager__.updateImage(image.imageId, image.imageTitle, filename, image.imageMode)
+            __dbManager__.updateImage(image, filename)
 
             if image.imageMode == 'manga':
                 for page in mangaFiles:
@@ -676,6 +677,7 @@ def process_image(mode, artist=None, image_id=None, user_dir='', bookmark=False,
             result = 0
 
         if image is not None:
+            image.PrintInfo()
             del image
         gc.collect()
         if parse_medium_page is not None:

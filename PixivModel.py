@@ -176,12 +176,16 @@ class PixivImage:
     imageTags = []
     imageMode = ""
     imageUrls = []
+    imageHeight = 0
+    imageWidth = 0
     worksDate = unicode("")
     worksResolution = unicode("")
     worksTools = unicode("")
     jd_rtv = 0
     jd_rtc = 0
     jd_rtt = 0
+    isOriginal = False
+    isR18 = False
     imageCount = 0
     fromBookmark = False
     worksDateDateTime = datetime.fromordinal(1)
@@ -264,8 +268,7 @@ class PixivImage:
     def IsNeedPermission(self, page):
         errorMessages = ['この作品は.+さんのマイピクにのみ公開されています|この作品は、.+さんのマイピクにのみ公開されています',
                          'This work is viewable only for users who are in .+\'s My pixiv list',
-                         'Only .+\'s My pixiv list can view this.',
-                         '<section class="restricted-content">']
+                         'Only .+\'s My pixiv list can view this.']
         return PixivHelper.HaveStrings(page, errorMessages)
 
     def IsDeleted(self, page):
@@ -326,7 +329,7 @@ class PixivImage:
                 if "og:description" in meta["property"]:
                     self.imageCaption = meta["content"]
 
-        # 03/19/2016 get title from <h1 class="title">title</h1>
+        # 03/19/2016 get title from "<h1 class="title">title</h1>"
         self.imageTitle = page.find("h1", attrs={'class': 'title'}).string
 
         self.jd_rtv = int(page.find(attrs={'class': 'view-count'}).string)
@@ -348,6 +351,7 @@ class PixivImage:
 
     def ParseWorksData(self, page):
         temp = page.find(attrs={'class': 'meta'}).findAll('li')
+        metaClass = page.find(attrs={'class': 'meta'})
         # 07/22/2011 03:09|512×600|RETAS STUDIO
         # 07/26/2011 00:30|Manga 39P|ComicStudio 鉛筆 つけペン
         # 1/05/2011 07:09|723×1023|Photoshop SAI  [ R-18 ]
@@ -379,13 +383,30 @@ class PixivImage:
                 tempDate = self.worksDate.replace(u'年', '-').replace(u'月', '-').replace(u'日', '')
                 self.worksDateDateTime = datetime.strptime(tempDate, '%Y-%m-%d %H:%M')
 
+        print "[DEBUG] %s" % self.worksDateDateTime
         self.worksResolution = unicode(temp[1].string).replace(u'×', u'x')
+        self.imageWidth = int(self.worksResolution.split(u'x')[0])
+        self.imageHeight = int(self.worksResolution.split(u'x')[1])
+
         toolsTemp = page.find(attrs={'class': 'meta'}).find(attrs={'class': 'tools'})
         if toolsTemp is not None and len(toolsTemp) > 0:
             tools = toolsTemp.findAll('li')
             for tool in tools:
-                self.worksTools = self.worksTools + ' ' + unicode(tool.string)
+                # Change delimiter to '^'
+                if self.worksTools != '':
+                    self.worksTools = self.worksTools + '^' + unicode(tool.string)
+                else:
+                    self.worksTools = unicode(tool.string)
             self.worksTools = self.worksTools.strip()
+
+        originalTemp = metaClass.find(attrs={'class': 'original-works _ui-tooltip'})
+        if originalTemp is not None and len(originalTemp) > 0:
+            self.isOriginal =True
+
+        r18Temp = metaClass.find(attrs={'class': 'r-18'})
+        if r18Temp is not None and len(r18Temp) > 0:
+            self.isR18 =True
+
 
     def ParseTags(self, page):
         del self.imageTags[:]
@@ -410,7 +431,11 @@ class PixivImage:
         PixivHelper.safePrint('total : ' + str(self.jd_rtt))
         PixivHelper.safePrint('Date : ' + self.worksDate)
         PixivHelper.safePrint('Resolution : ' + self.worksResolution)
+        PixivHelper.safePrint('Width : %d' % self.imageWidth)
+        PixivHelper.safePrint('Height : %d' % self.imageHeight)
         PixivHelper.safePrint('Tools : ' + self.worksTools)
+        PixivHelper.safePrint('Original : %s' % ("True" if self.isOriginal else "False"))
+        PixivHelper.safePrint('R18 : %s' % ("True" if self.isR18 else "False"))
         return ""
 
     def ParseImages(self, page, mode=None, _br=None):
