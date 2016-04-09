@@ -23,6 +23,7 @@ class PixivArtist:
     imageList = []
     isLastPage = None
     haveImages = None
+    totalImages = 0
 
     def __init__(self, mid=0, page=None, fromImage=False):
         if page is not None:
@@ -110,6 +111,7 @@ class PixivArtist:
                 # fuck performance :D
                 if href not in self.imageList:
                     self.imageList.append(href)
+        self.totalImages = SharedParser.parseCountBadge(page)
 
     def IsNotLoggedIn(self, page):
         check = page.findAll('a', attrs={'class': 'signup_button'})
@@ -274,7 +276,8 @@ class PixivImage:
     def IsDeleted(self, page):
         errorMessages = ['該当イラストは削除されたか、存在しないイラストIDです。|該当作品は削除されたか、存在しない作品IDです。',
                          'The following work is either deleted, or the ID does not exist.',
-                         'This work was deleted.']
+                         'This work was deleted.',
+                         'Work has been deleted or the ID does not exist.']
         return PixivHelper.HaveStrings(page, errorMessages)
 
     def IsGuroDisabled(self, page):
@@ -320,17 +323,30 @@ class PixivImage:
         # remove premium-introduction-modal so we can get caption from work-info
         # somehow selecting section doesn't works
         premium_introduction_modal = page.findAll('div', attrs={'id': 'premium-introduction-modal'})
+        premium_introduction_modal.extend(page.findAll('div', attrs={'id': 'popular-search-trial-end-introduction-modal'}))
         for modal in premium_introduction_modal:
-            modal.extract()
+            if modal is not None:
+                modal.extract()
 
-        meta_data = page.findAll('meta')
-        for meta in meta_data:
-            if meta.has_key("property"):
-                if "og:description" in meta["property"]:
-                    self.imageCaption = meta["content"]
-
-        # 03/19/2016 get title from "<h1 class="title">title</h1>"
-        self.imageTitle = page.find("h1", attrs={'class': 'title'}).string
+        # new layout on 20160319
+        tempTitles = page.findAll('h1', attrs={'class':'title'})
+        for tempTitle in tempTitles:
+            if tempTitle is None or tempTitle.string is None:
+                continue
+            elif len(tempTitle.string) == 0:
+                continue
+            else:
+                self.imageTitle = tempTitle.string
+                break
+        tempCaptions = page.findAll('p', attrs={'class':'caption'})
+        for tempCaption in tempCaptions:
+            if tempCaption is None or tempCaption.string is None:
+                continue
+            elif len(tempCaption.string) == 0:
+                continue
+            else:
+                self.imageCaption = tempCaption.string
+                break
 
         self.jd_rtv = int(page.find(attrs={'class': 'view-count'}).string)
         self.jd_rtc = int(page.find(attrs={'class': 'rated-count'}).string)
@@ -803,10 +819,10 @@ PixivTagsItem = collections.namedtuple('PixivTagsItem', ['imageId', 'bookmarkCou
 
 class PixivTags:
     '''Class for parsing tags search page'''
-    # imageList = None
     itemList = None
     haveImage = None
     isLastPage = None
+    availableImages = 0
     __re_illust = re.compile(r'member_illust.*illust_id=(\d*)')
     __re_imageItemClass = re.compile(r".*\bimage-item\b.*")
 
@@ -852,6 +868,7 @@ class PixivTags:
                                 imageResponse = temp.contents[1]
                 self.itemList.append(PixivTagsItem(int(image_id), int(bookmarkCount), int(imageResponse)))
         self.checkLastPage(page)
+        self.availableImages = SharedParser.parseCountBadge(page)
         return self.itemList
 
     def parseMemberTags(self, page):
@@ -866,6 +883,7 @@ class PixivTags:
                     image_id = int(result[0])
                     self.itemList.append(PixivTagsItem(int(image_id), 0, 0))
         self.checkLastPage(page, fromMember=True)
+        self.availableImages = SharedParser.parseCountBadge(page)
         return self.itemList
 
     def checkLastPage(self, page, fromMember=False):
@@ -974,3 +992,15 @@ class PixivGroup:
         string = self.short_pattern.sub("", string).strip()
         string = string + " " + shortened
         return string
+
+class SharedParser:
+    @staticmethod
+    def parseCountBadge(page):
+    # parse image count from count-badge
+        totalImages = 0
+        count_badge_span = page.find('span', attrs={'class':'count-badge'})
+        if count_badge_span is not None:
+            tempCount = re.findall('\d+', count_badge_span.string)
+            if tempCount > 0:
+                totalImages = int(tempCount[0])
+        return totalImages
